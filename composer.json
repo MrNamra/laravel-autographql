@@ -1,0 +1,37 @@
+{
+    "name": "mrnamra/laravel-autographql",
+    "description": "Zero-config REST to GraphQL bridge for Laravel",
+    "license": "MIT",
+    "type": "library",
+    "keywords": [
+        "laravel",
+        "graphql",
+        "rest",
+        "bridge",
+        "autographql"
+    ],
+    "authors": [
+        {
+            "name": "MrNamra",
+            "email": "namraramsha@yahoo.com"
+        }
+    ],
+    "require": {
+        "php": "^8.1",
+        "webonyx/graphql-php": "^15.0"
+    },
+    "require-dev": {
+        "phpunit/phpunit": "^10.0",
+        "orchestra/testbench": "^8.0|^9.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "MrNamra\\AutoGraphQL\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "MrNamra\\AutoGraphQL\\Tests\\": "tests/"
+        }
+    }
+}
