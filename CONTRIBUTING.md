@@ -1,52 +1,42 @@
 # Contributing to AutoGraphQL
 
-Thank you for your interest in contributing to AutoGraphQL! This package aims to be the most transparent and effortless way to add GraphQL to Laravel REST APIs.
+Thank you for your interest in helping improve **AutoGraphQL**! We want to make it as easy as possible to contribute to this project.
 
-## 🛠️ Development Setup
+## 🤝 Code of Conduct
 
-1. **Clone the repository**
-   ```bash
-   git clone https://github.com/mrnamra/laravel-autographql.git
-   cd laravel-autographql
-   ```
+All contributors are expected to follow our Code of Conduct and represent the project professionally.
 
-2. **Install dependencies**
-   ```bash
-   composer install
-   ```
+## 🛠️ How to Contribute
 
-3. **Run tests**
-   ```bash
-   vendor/bin/phpunit
-   ```
+1.  **Fork the repository** on GitHub.
+2.  **Clone your fork** to your local machine:
+    ```bash
+    git clone https://github.com/your-username/laravel-autographql.git
+    ```
+3.  **Create a new branch** for your feature or bug fix:
+    ```bash
+    git checkout -b feature/your-feature-name
+    ```
+4.  **Make your changes**, following the existing code style.
+5.  **Run tests** (if applicable) using PHPUnit.
+6.  **Commit your changes** with clear, descriptive messages.
+7.  **Push to your fork** and **Submit a Pull Request** to the `main` branch.
 
-4. **Run static analysis**
-   ```bash
-   vendor/bin/phpstan analyse src
-   ```
+## 🐛 Reporting Bugs
 
-## 📜 Contribution Rules
-
-- **PSR-12 coding standard**: Ensure your code follows the standard. We use `laravel/pint` for code styling.
-- **Provide tests**: Any new feature or bug fix must come with a corresponding test.
-- **Maintain zero-config**: The core philosophy is **zero-config**. Any feature that requires manual schema writing or class creation should be an optional override, not the default.
-- **Performance matters**: GraphQL selection set analysis and eager loading are critical. Avoid any performance regressions in these areas.
-
-## 🐛 Bug Reports
-
-If you find a bug, please open an issue and include:
-- Laravel version
-- PHP version
-- Your route/model structure
-- Steps to reproduce
+If you find a bug, please open an issue on GitHub. When reporting a bug, include:
+- A clear description of the issue.
+- Steps to reproduce the bug.
+- Any relevant logs or screenshots.
+- Your environment details (PHP version, Laravel version).
 
 ## 💡 Feature Requests
 
-We love new ideas! If you want to request a feature, please outline:
-- Use case
-- Expected behavior
-- Why it fits the **AutoGraphQL** philosophy
+We welcome new ideas! If you have a feature request, please open an issue and describe:
+- The problem your feature solves.
+- How you imagine the feature working.
+- Any alternative solutions you've considered.
 
----
+## 📄 License
 
-Let's make Laravel GraphQL easier for everyone!
+By contributing, you agree that your contributions will be licensed under the MIT License.
