@@ -24,7 +24,8 @@ class ResolverProxy
         string $method,
         array  $args,
         string $modelClass,
-        array  $selection = []
+        array  $selection = [],
+        string $httpMethod = 'GET'
     ): mixed {
         // 1. Prepare a fake Laravel Request
         // Note: For POST/PUT, we use 'POST' and merge data into JSON body Simulation
@@ -34,7 +35,7 @@ class ResolverProxy
             unset($requestData['input']);
         }
 
-        $request = Request::create('/', 'GET', $requestData);
+        $request = Request::create('/', $httpMethod, $requestData);
         
         // Populate inputs for validation etc.
         $request->merge($requestData);
