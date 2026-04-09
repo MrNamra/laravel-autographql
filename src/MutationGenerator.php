@@ -39,7 +39,7 @@ class MutationGenerator
                 'description' => $attr->description ?? "Create a new {$name}",
                 'args'        => ['input' => ['type' => Type::nonNull($inputType)]],
                 'resolve'     => fn($r, $args, $c, $info) => app(ResolverProxy::class)
-                                    ->resolve($route['controller'], $route['action'], $args['input'], $route['model'], $info->getFieldSelection(5)),
+                                    ->resolve($route['controller'], $route['action'], $args['input'], $route['model'], $info->getFieldSelection(5), $method),
             ]
         ];
     }
@@ -58,7 +58,7 @@ class MutationGenerator
                 ],
                 'resolve'     => fn($r, $args, $c, $info) => app(ResolverProxy::class)
                                     ->resolve($route['controller'], $route['action'],
-                                        array_merge(['id' => $args['id']], $args['input']), $route['model'], $info->getFieldSelection(5)),
+                                        array_merge(['id' => $args['id']], $args['input']), $route['model'], $info->getFieldSelection(5), $method),
             ]
         ];
     }
@@ -76,7 +76,7 @@ class MutationGenerator
                 'description' => $attr->description ?? "Delete a {$name}",
                 'args'        => ['id' => ['type' => Type::nonNull(Type::id())]],
                 'resolve'     => fn($r, $args) => app(ResolverProxy::class)
-                                    ->resolve($route['controller'], $route['action'], $args, $route['model']),
+                                    ->resolve($route['controller'], $route['action'], $args, $route['model'], [], $method),
             ]
         ];
     }
