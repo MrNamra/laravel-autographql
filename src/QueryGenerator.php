@@ -63,7 +63,8 @@ class QueryGenerator
                 $route['action'],
                 $args,
                 $route['model'],
-                $selection
+                $selection,
+                $route['method']
             );
         };
     }
