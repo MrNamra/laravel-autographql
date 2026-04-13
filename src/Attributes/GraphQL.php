@@ -12,6 +12,7 @@ class GraphQL
         public ?string $mutation = null,
         public ?string $description = null,
         public ?string $model = null,
+        public ?array $response = null,
         public array $eagerLoad = [],
         public array $middleware = [],
         public bool $skip = false,
