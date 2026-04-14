@@ -40,20 +40,24 @@ class SchemaGenerator
 
         // 2. Build queries and mutations from routes
         foreach ($routes as $route) {
-            if (!$route['model']) continue;
+            $attribute = $route['attribute'];
+            $type      = null;
 
-            $type = $this->modelTypes[$route['model']];
+            if ($attribute && $attribute->response) {
+                $customName = Str::studly($attribute->query ?: ($attribute->mutation ?: $route['action'])) . 'Response';
+                $type = $this->buildCustomType($customName, $attribute->response);
+            } elseif ($route['model']) {
+                $type = $this->modelTypes[$route['model']];
+            }
 
-            switch (strtoupper($route['method'])) {
-                case 'GET':
-                    $queries = array_merge($queries, $this->queryGen->generate($route, $type));
-                    break;
-                case 'POST':
-                case 'PUT':
-                case 'PATCH':
-                case 'DELETE':
-                    $mutations = array_merge($mutations, $this->mutationGen->generate($route, $type, $this->typeGen->fromModel($route['model'], true)));
-                    break;
+            if (!$type) continue;
+
+            $method = strtoupper($route['method']);
+            if ($method === 'GET') {
+                $queries = array_merge($queries, $this->queryGen->generate($route, $type));
+            } else {
+                $inputFields = $route['model'] ? $this->typeGen->fromModel($route['model'], true) : [];
+                $mutations = array_merge($mutations, $this->mutationGen->generate($route, $type, $inputFields));
             }
         }
 
@@ -95,6 +99,39 @@ class SchemaGenerator
         }
 
         return $fields;
+    }
+
+    private function buildCustomType(string $name, array $fields): ObjectType
+    {
+        $graphqlFields = [];
+        foreach ($fields as $fieldName => $typeDefinition) {
+            if (is_array($typeDefinition)) {
+                // Nested structure
+                $graphqlFields[$fieldName] = [
+                    'type' => $this->buildCustomType(Str::studly($name . '_' . $fieldName), $typeDefinition)
+                ];
+            } elseif (is_string($typeDefinition) && class_exists($typeDefinition)) {
+                // Link to existing model type if it exists
+                if (isset($this->modelTypes[$typeDefinition])) {
+                    $graphqlFields[$fieldName] = ['type' => $this->modelTypes[$typeDefinition]];
+                } else {
+                    // Ad-hoc model type generation
+                    $this->modelTypes[$typeDefinition] = new ObjectType([
+                        'name'   => class_basename($typeDefinition),
+                        'fields' => fn() => $this->buildFields($typeDefinition),
+                    ]);
+                    $graphqlFields[$fieldName] = ['type' => $this->modelTypes[$typeDefinition]];
+                }
+            } else {
+                // Scalar type
+                $graphqlFields[$fieldName] = ['type' => $this->mapStringToType($typeDefinition)];
+            }
+        }
+
+        return new ObjectType([
+            'name'   => $name,
+            'fields' => $graphqlFields,
+        ]);
     }
 
     private function mapStringToType(string $typeStr): Type

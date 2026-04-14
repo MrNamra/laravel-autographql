@@ -21,15 +21,15 @@ class MutationGenerator
         $inputType  = $this->buildInputType($modelName, $inputFields, $method);
 
         return match ($method) {
-            'POST'   => $this->createMutation($type, $inputType, $route, $modelName, $attribute),
+            'POST'   => $this->createMutation($type, $inputType, $route, $modelName, $attribute, $method),
             'PUT',
-            'PATCH'  => $this->updateMutation($type, $inputType, $route, $modelName, $attribute),
-            'DELETE' => $this->deleteMutation($route, $modelName, $attribute),
+            'PATCH'  => $this->updateMutation($type, $inputType, $route, $modelName, $attribute, $method),
+            'DELETE' => $this->deleteMutation($route, $modelName, $attribute, $method),
             default  => [],
         };
     }
 
-    private function createMutation(ObjectType $type, InputObjectType $inputType, array $route, string $name, $attr): array
+    private function createMutation(ObjectType $type, InputObjectType $inputType, array $route, string $name, $attr, string $method): array
     {
         $mutationName = ($attr && $attr->mutation) ? $attr->mutation : 'create' . $name;
         
@@ -38,13 +38,15 @@ class MutationGenerator
                 'type'        => $type,
                 'description' => $attr->description ?? "Create a new {$name}",
                 'args'        => ['input' => ['type' => Type::nonNull($inputType)]],
-                'resolve'     => fn($r, $args, $c, $info) => app(ResolverProxy::class)
-                                    ->resolve($route['controller'], $route['action'], $args['input'], $route['model'], $info->getFieldSelection(5), $method),
+                'resolve'     => function($r, $args, $c, $info) use ($route, $method) {
+                    return app(ResolverProxy::class)
+                        ->resolve($route['controller'], $route['action'], $args['input'], $route['model'], $info->getFieldSelection(5), $method);
+                },
             ]
         ];
     }
 
-    private function updateMutation(ObjectType $type, InputObjectType $inputType, array $route, string $name, $attr): array
+    private function updateMutation(ObjectType $type, InputObjectType $inputType, array $route, string $name, $attr, string $method): array
     {
         $mutationName = ($attr && $attr->mutation) ? $attr->mutation : 'update' . $name;
         
@@ -56,14 +58,16 @@ class MutationGenerator
                     'id'    => ['type' => Type::nonNull(Type::id())],
                     'input' => ['type' => Type::nonNull($inputType)],
                 ],
-                'resolve'     => fn($r, $args, $c, $info) => app(ResolverProxy::class)
-                                    ->resolve($route['controller'], $route['action'],
-                                        array_merge(['id' => $args['id']], $args['input']), $route['model'], $info->getFieldSelection(5), $method),
+                'resolve'     => function($r, $args, $c, $info) use ($route, $method) {
+                    return app(ResolverProxy::class)
+                        ->resolve($route['controller'], $route['action'],
+                            array_merge(['id' => $args['id']], $args['input']), $route['model'], $info->getFieldSelection(5), $method);
+                },
             ]
         ];
     }
 
-    private function deleteMutation(array $route, string $name, $attr): array
+    private function deleteMutation(array $route, string $name, $attr, string $method): array
     {
         $mutationName = ($attr && $attr->mutation) ? $attr->mutation : 'delete' . $name;
         
@@ -75,8 +79,10 @@ class MutationGenerator
                 ]]),
                 'description' => $attr->description ?? "Delete a {$name}",
                 'args'        => ['id' => ['type' => Type::nonNull(Type::id())]],
-                'resolve'     => fn($r, $args) => app(ResolverProxy::class)
-                                    ->resolve($route['controller'], $route['action'], $args, $route['model'], [], $method),
+                'resolve'     => function($r, $args) use ($route, $method) {
+                    return app(ResolverProxy::class)
+                        ->resolve($route['controller'], $route['action'], $args, $route['model'], [], $method);
+                },
             ]
         ];
     }
