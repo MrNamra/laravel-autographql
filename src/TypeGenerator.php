@@ -38,6 +38,10 @@ class TypeGenerator
      */
     public function fromModel(string $modelClass, bool $includeHidden = false): array
     {
+        if (empty($modelClass) || !class_exists($modelClass)) {
+            return [];
+        }
+
         /** @var \Illuminate\Database\Eloquent\Model $model */
         $model   = new $modelClass;
         $table   = $model->getTable();
