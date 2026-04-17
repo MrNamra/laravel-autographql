@@ -40,9 +40,12 @@ class ResolverProxy
         // Populate inputs for validation etc.
         $request->merge($requestData);
 
-        // 2. Mirror auth context from the current real request
+        // 2. Mirror auth context and Swap request into container
+        $originalRequest = app('request');
+        app()->instance('request', $request);
+
         if (app()->bound('request')) {
-            $realRequest = app('request');
+            $realRequest = $originalRequest;
             $user = $realRequest->user();
             
             $request->setUserResolver(fn() => $user);
@@ -56,14 +59,33 @@ class ResolverProxy
 
         // 3. Handle automatic eager loading
         $eagerLoads = [];
-        if (config('autographql.eager_loading', true) && !empty($selection) && class_exists($modelClass)) {
-            $eagerLoads = app(EagerLoadingAnalyzer::class)->analyze($modelClass, $selection);
+        $routeInfo = $this->findRouteInfo($controller, $method);
+        $attribute = $routeInfo['attribute'] ?? null;
+
+        if (config('autographql.eager_loading', true) && !empty($selection)) {
+            if ($attribute && $attribute->response) {
+                // For custom responses, we analyze each top-level key that maps to a model
+                foreach ($selection as $field => $subFields) {
+                    if (isset($attribute->response[$field]) && 
+                        is_string($attribute->response[$field]) && 
+                        class_exists($attribute->response[$field])) {
+                        $eagerLoads[$field] = app(EagerLoadingAnalyzer::class)->analyze($attribute->response[$field], $subFields);
+                    }
+                }
+            } elseif (class_exists($modelClass)) {
+                $eagerLoads = app(EagerLoadingAnalyzer::class)->analyze($modelClass, $selection);
+            }
         }
 
         // Apply attribute-based manual eager loads
-        $attribute = app(RouteScanner::class)->getApiRoutes()[0]['attribute'] ?? null; // Simplification
         if ($attribute && !empty($attribute->eagerLoad)) {
-            $eagerLoads = array_unique(array_merge($eagerLoads, $attribute->eagerLoad));
+            if (is_array($eagerLoads)) {
+                // If it's a composite response, manual eager loads should probably be at the root if possible
+                // but this is an edge case. For now, assume root if it's a simple model query.
+                if (!empty($modelClass) && class_exists($modelClass)) {
+                    $eagerLoads = array_unique(array_merge($eagerLoads, $attribute->eagerLoad));
+                }
+            }
         }
 
         // 4. Call the controller with intelligent parameter mapping
@@ -140,84 +162,99 @@ class ResolverProxy
             throw new GraphQLValidationException($e->errors());
         } catch (AuthorizationException $e) {
             throw new GraphQLAuthException($e->getMessage());
+        } finally {
+            // Restore original request
+            app()->instance('request', $originalRequest);
         }
 
         // 5. Unwrap and post-process the response
-        return $this->unwrap($response, $modelClass, $eagerLoads, $args);
+        return $this->unwrap($response, $modelClass, $eagerLoads, $args, $attribute);
     }
 
     /**
      * Standardize Laravel response types for GraphQL consumption and apply automatic filtering/pagination.
      */
-    private function unwrap(mixed $response, string $modelClass, array $eagerLoads, array $args = []): mixed
+    private function unwrap(mixed $response, string $modelClass, mixed $eagerLoads, array $args = [], $attribute = null): mixed
     {
         // JsonResponse (return response()->json(...))
         if ($response instanceof JsonResponse) {
             $data = $response->getData(true);
-            return $data['data'] ?? $data;
+            return $this->unwrap($data['data'] ?? $data, $modelClass, $eagerLoads, $args, $attribute);
         }
 
         // API Resource/Collection
         if ($response instanceof JsonResource) {
             $resource = $response->resource;
-            // Apply eager loading to the model/collection inside the resource
             if ($resource instanceof \Illuminate\Database\Eloquent\Model || $resource instanceof \Illuminate\Support\Collection) {
-                if (!empty($eagerLoads)) {
+                if (!empty($eagerLoads) && is_array($eagerLoads)) {
                     $resource->load($eagerLoads);
                 }
             }
             return $response->resolve();
         }
 
+        // Composite Responses (Plain arrays with potential models)
+        if (is_array($response) && !($response instanceof \Illuminate\Support\Collection)) {
+            // Smart Unwrapping: If we expect a specific model (no custom response attribute)
+            // but got an array, check if the model is nested inside (common for token responses).
+            if (empty($attribute->response) && !empty($modelClass) && class_exists($modelClass)) {
+                foreach ($response as $key => $value) {
+                    if ($value instanceof $modelClass) {
+                        if (!empty($eagerLoads) && is_array($eagerLoads)) {
+                            $value->load($eagerLoads);
+                        }
+                        return $value;
+                    }
+                }
+            }
+
+            foreach ($response as $key => &$value) {
+                if ($value instanceof \Illuminate\Database\Eloquent\Model || $value instanceof \Illuminate\Database\Eloquent\Collection) {
+                    $nestedEager = (is_array($eagerLoads) && isset($eagerLoads[$key])) ? $eagerLoads[$key] : [];
+                    if (!empty($nestedEager)) {
+                        $value->load($nestedEager);
+                    }
+                }
+            }
+            return $response;
+        }
+
         // Paginator
         if ($response instanceof LengthAwarePaginator) {
-            if (!empty($eagerLoads)) {
+            if (!empty($eagerLoads) && is_array($eagerLoads)) {
                 $response->getCollection()->load($eagerLoads);
             }
             return $response->items();
         }
 
-        // Eloquent Builder (Not yet executed)
+        // Eloquent Builder
         if ($response instanceof \Illuminate\Database\Eloquent\Builder || $response instanceof \Illuminate\Database\Query\Builder) {
             $response = $this->applyBuilderFilters($response, $args);
-            
-            // If it's a pagination request
             if (isset($args['page']) || isset($args['per_page'])) {
                 $perPage = $args['per_page'] ?? $args['limit'] ?? 20;
                 $page = $args['page'] ?? 1;
                 $paginator = $response->paginate($perPage, ['*'], 'page', $page);
-                
-                if (!empty($eagerLoads)) {
+                if (!empty($eagerLoads) && is_array($eagerLoads)) {
                     $paginator->getCollection()->load($eagerLoads);
                 }
                 return $paginator->items();
             }
-
             $result = $response->get();
-            if (!empty($eagerLoads)) {
+            if (!empty($eagerLoads) && is_array($eagerLoads)) {
                 $result->load($eagerLoads);
             }
-            return $result->toArray();
+            return $result;
         }
 
         // Eloquent Collection or Model
         if ($response instanceof \Illuminate\Database\Eloquent\Model || $response instanceof \Illuminate\Database\Eloquent\Collection) {
-            if (!empty($eagerLoads)) {
+            if (!empty($eagerLoads) && is_array($eagerLoads)) {
                 $response->load($eagerLoads);
             }
-
-            // Apply automatic filtering/pagination/first/last
             if ($response instanceof \Illuminate\Database\Eloquent\Collection) {
-                $result = $this->applyCollectionFilters($response, $args);
-            } else {
-                $result = $response;
+                $response = $this->applyCollectionFilters($response, $args);
             }
-
-            if ($result instanceof \Illuminate\Database\Eloquent\Model) {
-                return $result->toArray();
-            }
-
-            return ($result && method_exists($result, 'toArray')) ? $result->toArray() : null;
+            return $response;
         }
 
         return $response;
