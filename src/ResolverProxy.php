@@ -35,19 +35,46 @@ class ResolverProxy
             unset($requestData['input']);
         }
 
-        $request = Request::create('/', $httpMethod, $requestData);
+        $request = Request::create('/', $httpMethod, $requestData, [], [], [], json_encode($requestData));
         
         // Populate inputs for validation etc.
         $request->merge($requestData);
+        // 2. Resolve Auth User BEFORE Swapping the Request
+        $originalRequest = app("request");
+        $realRequest = $originalRequest;
+        $user = $realRequest->user(); // Try default guard first
 
-        // 2. Mirror auth context and Swap request into container
-        $originalRequest = app('request');
-        app()->instance('request', $request);
-
-        if (app()->bound('request')) {
-            $realRequest = $originalRequest;
-            $user = $realRequest->user();
+        // If no user found, look ahead at the target route's middleware for specific guards (e.g., auth:sanctum)
+        if (!$user) {
+            $routeInfo = $this->findRouteInfo($controller, $method);
+            if ($routeInfo) {
+                $middlewares = $routeInfo["middleware"] ?? [];
+                if ($routeInfo["attribute"] && !empty($routeInfo["attribute"]->middleware)) {
+                    $middlewares = array_merge($middlewares, $routeInfo["attribute"]->middleware);
+                }
+                foreach ($middlewares as $mw) {
+                    if (str_starts_with($mw, "auth:")) {
+                        $guard = substr($mw, 5);
+                        $user = $realRequest->user($guard);
+                        if ($user) break;
+                    }
+                }
+            }
             
+            // Final fallback if they used the default "auth" middleware but are sending an API token
+            if (!$user && array_key_exists("sanctum", config("auth.guards", []))) {
+                $user = $realRequest->user("sanctum");
+            }
+        }
+
+        // 3. Mirror auth context and Swap request into container
+        // Copy original headers so downstream logic (and Sanctum inside verifyMiddleware) can still read them if needed
+        $request->headers->replace($originalRequest->headers->all());
+        
+        app()->instance("request", $request);
+        app()->instance(\Illuminate\Http\Request::class, $request);
+
+        if (app()->bound("request")) {
             $request->setUserResolver(fn() => $user);
             $request->cookies->replace($realRequest->cookies->all());
             
@@ -138,8 +165,15 @@ class ResolverProxy
         try {
             // 5. Authorization Mirroring: Enforce REST route middleware
             $routeInfo = $this->findRouteInfo($controller, $method);
-            if ($routeInfo && !empty($routeInfo['middleware'])) {
-                $this->verifyMiddlewareRequirements($routeInfo['middleware'], $request);
+            if ($routeInfo) {
+                $middlewares = $routeInfo['middleware'] ?? [];
+                if ($routeInfo['attribute'] && !empty($routeInfo['attribute']->middleware)) {
+                    $middlewares = array_unique(array_merge($middlewares, $routeInfo['attribute']->middleware));
+                }
+                
+                if (!empty($middlewares)) {
+                    $this->verifyMiddlewareRequirements($middlewares, $request);
+                }
             }
 
             // 6. Intelligent Fallback: If 'id' is missing but 'first' or 'last' is provided,
@@ -165,6 +199,7 @@ class ResolverProxy
         } finally {
             // Restore original request
             app()->instance('request', $originalRequest);
+            app()->instance(\Illuminate\Http\Request::class, $originalRequest);
         }
 
         // 5. Unwrap and post-process the response
